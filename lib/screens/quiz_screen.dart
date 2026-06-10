@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/quiz_question.dart';
 import '../widgets/custom_button.dart';
 
@@ -10,38 +11,48 @@ class QuizScreen extends StatefulWidget {
 }
 
 class _QuizScreenState extends State<QuizScreen> {
+  final supabase = Supabase.instance.client;
+  final TextEditingController _nameController = TextEditingController();
+
   List<QuizQuestion> _questions = [];
   int _currentIndex = 0;
   int _score = 0;
-  int _totalQuestions = 0;
   int? _selectedAnswer;
-  bool _showResult = false;
+  bool _quizStarted = false;
+  bool _quizFinished = false;
 
+  String playerName = '';
+
+  // ================= START QUIZ =================
   void _startQuiz() {
-    final allQuestions = QuizQuestion.getAllQuestions();
-    _questions = List.from(allQuestions)..shuffle();
+    final all = QuizQuestion.getAllQuestions();
+    _questions = List.from(all)..shuffle();
     _questions = _questions.take(10).toList();
-    _currentIndex = 0;
-    _score = 0;
-    _totalQuestions = _questions.length;
-    _selectedAnswer = null;
-    _showResult = false;
 
-    setState(() {});
+    setState(() {
+      _quizStarted = true;
+      _quizFinished = false;
+      _currentIndex = 0;
+      _score = 0;
+      _selectedAnswer = null;
+    });
   }
 
+  // ================= ANSWER =================
   void _selectAnswer(int index) {
     if (_selectedAnswer != null) return;
 
     setState(() {
       _selectedAnswer = index;
+
       if (index == _questions[_currentIndex].correctIndex) {
         _score++;
       }
     });
   }
 
-  void _nextQuestion() {
+  // ================= NEXT =================
+  void _next() {
     if (_currentIndex < _questions.length - 1) {
       setState(() {
         _currentIndex++;
@@ -49,236 +60,191 @@ class _QuizScreenState extends State<QuizScreen> {
       });
     } else {
       setState(() {
-        _showResult = true;
+        _quizFinished = true;
       });
+
+      _saveToSupabase();
     }
   }
 
-  void _resetQuiz() {
+  // ================= SAVE TO SUPABASE =================
+  Future<void> _saveToSupabase() async {
+    try {
+      final percent = (_score / _questions.length) * 100;
+
+      await supabase.from('quiz_result').insert({
+        'name': playerName,
+        'score': _score,
+        'total': _questions.length,
+      });
+
+      debugPrint("✔ Quiz tersimpan ke Supabase");
+    } catch (e) {
+      debugPrint("❌ Gagal simpan quiz: $e");
+    }
+  }
+
+  // ================= RESET =================
+  void _reset() {
     setState(() {
+      _quizStarted = false;
+      _quizFinished = false;
+      _questions = [];
       _currentIndex = 0;
       _score = 0;
       _selectedAnswer = null;
-      _showResult = false;
+      playerName = '';
+      _nameController.clear();
     });
   }
 
+  // ================= UI =================
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
       child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Column(
-        children: [
-          // Score Header
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.blue[50],
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.blue[200]!),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Skor: $_score/$_totalQuestions',
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF4facfe),
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+
+            // ================= INPUT NAMA =================
+            if (!_quizStarted)
+              TextField(
+                controller: _nameController,
+                decoration: InputDecoration(
+                  labelText: "Nama Pemain",
+                  prefixIcon: const Icon(Icons.person),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
                   ),
                 ),
-                if (_totalQuestions > 0)
-                  Text(
-                    '${((_score / _totalQuestions) * 100).toStringAsFixed(0)}%',
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF4facfe),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-          
-          // Question
-          Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Color(0xFFF093FB),
-                    Color(0xFFF5576C),
-                  ],
-                ),
-                borderRadius: BorderRadius.all(Radius.circular(20)),
               ),
-              child: _showResult
+
+            const SizedBox(height: 20),
+
+            // ================= STATUS =================
+            if (playerName.isNotEmpty)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  "Player: $playerName",
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue,
+                  ),
+                ),
+              ),
+
+            const SizedBox(height: 20),
+
+            // ================= QUESTION BOX =================
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFF093FB), Color(0xFFF5576C)],
+                ),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: _quizFinished
                   ? Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.emoji_events, size: 80, color: Colors.white),
-                        const SizedBox(height: 20),
+                        const Icon(Icons.emoji_events,
+                            size: 80, color: Colors.white),
+                        const SizedBox(height: 10),
                         Text(
-                          'Kuis Selesai!',
-                          style: TextStyle(
-                            fontSize: 28,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          'Skor: $_score/$_totalQuestions',
-                          style: TextStyle(
-                            fontSize: 24,
-                            color: Colors.white.withOpacity(0.9),
-                          ),
-                        ),
-                        Text(
-                          '${((_score / _totalQuestions) * 100).toStringAsFixed(1)}%',
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
+                          "Skor: $_score/${_questions.length}",
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 22),
                         ),
                       ],
                     )
                   : Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(
-                          'Pertanyaan ${_currentIndex + 1}/$_totalQuestions',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.white.withOpacity(0.9),
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        Text(
-                          _questions.isEmpty
-                              ? 'Klik Mulai untuk memulai kuis!'
+                          !_quizStarted
+                              ? "Masukkan nama lalu mulai"
                               : _questions[_currentIndex].question,
-                          style: const TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
                           textAlign: TextAlign.center,
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 20),
                         ),
                       ],
                     ),
             ),
-          
-          
-          // Options
-          if (!_showResult && _questions.isNotEmpty)
-            SizedBox(
-              height: 300,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                child: ListView.builder(
-                  itemCount: _questions[_currentIndex].options.length,
-                  itemBuilder: (context, index) {
-                    final isCorrect = index == _questions[_currentIndex].correctIndex;
-                    final isSelected = _selectedAnswer == index;
-                    final isAnswered = _selectedAnswer != null;
 
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: GestureDetector(
-                        onTap: isAnswered ? null : () => _selectAnswer(index),
-                        child: Container(
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            color: isAnswered
-                                ? (isCorrect
-                                    ? const Color(0xFF4facfe)
-                                    : (isSelected ? Colors.red : Colors.white))
-                                : Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: isAnswered
-                                  ? (isCorrect ? const Color(0xFF4facfe) : Colors.red)
-                                  : Colors.grey[300]!,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.05),
-                                blurRadius: 8,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: isAnswered
-                                      ? (isCorrect
-                                          ? Colors.white.withOpacity(0.2)
-                                          : Colors.red.withOpacity(0.2))
-                                      : Colors.grey[200],
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Text(
-                                  '${index + 1}',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: isAnswered ? Colors.white : Colors.grey[700],
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: Text(
-                                  _questions[_currentIndex].options[index],
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w600,
-                                    color: isAnswered ? Colors.white : Colors.black87,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+            const SizedBox(height: 20),
+
+            // ================= OPTIONS =================
+            if (_quizStarted && !_quizFinished)
+              ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _questions[_currentIndex].options.length,
+                itemBuilder: (context, index) {
+                  final q = _questions[_currentIndex];
+                  final isCorrect = index == q.correctIndex;
+                  final isSelected = _selectedAnswer == index;
+
+                  Color bg = Colors.white;
+                  if (_selectedAnswer != null) {
+                    if (isCorrect) {
+                      bg = Colors.green;
+                    } else if (isSelected) {
+                      bg = Colors.red;
+                    }
+                  }
+
+                  return GestureDetector(
+                    onTap: () => _selectAnswer(index),
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: bg,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey),
+                      ),
+                      child: Text(
+                        q.options[index],
+                        style: const TextStyle(fontSize: 16),
+                      ),
+                    ),
+                  );
+                },
+              ),
+
+            const SizedBox(height: 20),
+
+            // ================= BUTTON =================
+            CustomButton(
+              text: !_quizStarted
+                  ? "Mulai Quiz"
+                  : (_quizFinished ? "Ulangi" : "Selanjutnya"),
+              onPressed: () {
+                if (!_quizStarted) {
+                  if (_nameController.text.trim().isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text("Isi nama dulu"),
                       ),
                     );
-                  },
-                ),
-              ),
+                    return;
+                  }
+
+                  playerName = _nameController.text.trim();
+                  _startQuiz();
+                } else if (_quizFinished) {
+                  _reset();
+                } else {
+                  _next();
+                }
+              },
             ),
-          
-          // Controls
-          Padding(
-            padding: const EdgeInsets.only(top: 24),
-            child: Row(
-              children: [
-                Expanded(
-                  child: CustomButton(
-                    text: _showResult ? 'Kuis Baru' : 'Mulai Kuis',
-                    onPressed: _questions.isEmpty ? _startQuiz : _resetQuiz,
-                  ),
-                ),
-                if (_selectedAnswer != null && !_showResult)
-                  Expanded(
-                    child: CustomButton(
-                      text: _currentIndex < _questions.length - 1 ? 'Selanjutnya' : 'Selesai',
-                      onPressed: _nextQuestion,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
-      )
     );
   }
 }

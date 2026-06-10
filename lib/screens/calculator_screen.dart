@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:math_expressions/math_expressions.dart';
 import 'history_screen.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class CalculatorScreen extends StatefulWidget {
   const CalculatorScreen({super.key});
@@ -12,6 +13,7 @@ class CalculatorScreen extends StatefulWidget {
 class _CalculatorScreenState extends State<CalculatorScreen> {
   String _expression = '';
   String _result = '0';
+  final supabase = Supabase.instance.client;
 
   void _onPressed(String buttonText) {
     setState(() {
@@ -23,9 +25,17 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         case '⌫':
           _expression = _expression.isEmpty ? '' : _expression.substring(0, _expression.length - 1);
           break;
-        case '=':
+       case '=':
           try {
             _result = _calculate(_expression);
+
+            if (_result != 'Error' && _expression.isNotEmpty) {
+              _saveHistory(
+                _expression,
+                _result,
+                _getOperationType(_expression),
+              );
+            }
           } catch (e) {
             _result = 'Error';
           }
@@ -47,7 +57,42 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       return 'Error';
     }
   }
+  String _getOperationType(String expression) {
+  if (expression.contains('+')) {
+    return 'Addition';
+  } else if (expression.contains('-')) {
+    return 'Subtraction';
+  } else if (expression.contains('×')) {
+    return 'Multiplication';
+  } else if (expression.contains('/')) {
+    return 'Division';
+  } else if (expression.contains('%')) {
+    return 'Modulo';
+  }
 
+  return 'Other';
+}
+  Future<void> _saveHistory(
+  String expression,
+  String result,
+  String operationType,
+) async {
+  try {
+    final response = await supabase
+        .from('calculation_history')
+        .insert({
+          'expression': expression,
+          'result': result,
+          'operation_type': operationType,
+        })
+        .select();
+
+    debugPrint('BERHASIL SIMPAN: $response');
+  } catch (e, stackTrace) {
+    debugPrint('ERROR DETAIL: $e');
+    debugPrint('STACK TRACE: $stackTrace');
+  }
+}
   Widget _buildButton({
     required String text,
     Color? backgroundColor,

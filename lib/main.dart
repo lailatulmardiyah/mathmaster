@@ -1,9 +1,26 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'screens/calculator_screen.dart';
 import 'screens/converter_screen.dart';
 import 'screens/quiz_screen.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await Supabase.initialize(
+  url: 'https://qriiobvobwstzvvqophg.supabase.co',
+  anonKey: 'sb_publishable_wKDuWgvPlTBr7yXdyLv5eQ_rsOcHJGV',
+);
+try {
+    final test = await Supabase.instance.client
+        .from('calculation_history')
+        .select()
+        .limit(1);
+
+    print('KONEKSI SUPABASE BERHASIL: $test');
+  } catch (e) {
+    print('KONEKSI SUPABASE GAGAL: $e');
+  }
   runApp(const MathMasterApp());
 }
 

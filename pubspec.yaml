@@ -15,8 +15,7 @@ dependencies:
   math_expressions: ^2.4.0
   fluttertoast: ^8.2.2
 
-  firebase_core: ^4.0.0
-  cloud_firestore: ^6.0.0
+  supabase_flutter: ^2.9.1
 
 dev_dependencies:
   flutter_test:

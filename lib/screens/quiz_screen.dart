@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/quiz_question.dart';
 import '../widgets/custom_button.dart';
+import 'package:fl_chart/fl_chart.dart';
 
 class QuizScreen extends StatefulWidget {
   const QuizScreen({super.key});
@@ -13,6 +14,7 @@ class QuizScreen extends StatefulWidget {
 class _QuizScreenState extends State<QuizScreen> {
   final supabase = Supabase.instance.client;
   final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _pinController = TextEditingController();
 
   List<QuizQuestion> _questions = [];
   int _currentIndex = 0;
@@ -22,6 +24,10 @@ class _QuizScreenState extends State<QuizScreen> {
   bool _quizFinished = false;
 
   String playerName = '';
+  String playerPin = '';
+
+  List<Map<String, dynamic>> _quizHistory = [];
+bool _isLoadingHistory = false;
 
   // ================= START QUIZ =================
   void _startQuiz() {
@@ -74,13 +80,42 @@ class _QuizScreenState extends State<QuizScreen> {
 
       await supabase.from('quiz_result').insert({
         'name': playerName,
+        'pin': playerPin,
         'score': _score,
         'total': _questions.length,
       });
 
       debugPrint("✔ Quiz tersimpan ke Supabase");
+      _fetchQuizHistory();
     } catch (e) {
       debugPrint("❌ Gagal simpan quiz: $e");
+    }
+  }
+
+  Future<void> _fetchQuizHistory() async {
+    if (playerName.isEmpty) return;
+
+    setState(() {
+      _isLoadingHistory = true;
+    });
+
+    try {
+      final response = await supabase
+          .from('quiz_result')
+          .select('score, created_at')
+          .eq('name', playerName)
+          .eq('pin', playerPin)
+          .order('created_at', ascending: true);
+
+      setState(() {
+        _quizHistory = List<Map<String, dynamic>>.from(response);
+        _isLoadingHistory = false;
+      });
+    } catch (e) {
+      debugPrint("❌ Gagal mengambil riwayat kuis: $e");
+      setState(() {
+        _isLoadingHistory = false;
+      });
     }
   }
 
@@ -94,8 +129,103 @@ class _QuizScreenState extends State<QuizScreen> {
       _score = 0;
       _selectedAnswer = null;
       playerName = '';
+      playerPin = '';
       _nameController.clear();
+      _pinController.clear();
     });
+  }
+
+  Widget _buildProgressChart() {
+    if (_isLoadingHistory) {
+      return const Padding(
+        padding: EdgeInsets.all(20.0),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_quizHistory.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    List<FlSpot> spots = [];
+    for (int i = 0; i < _quizHistory.length; i++) {
+      double score = double.tryParse(_quizHistory[i]['score'].toString()) ?? 0.0;
+      spots.add(FlSpot(i.toDouble() + 1, score));
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(top: 24, bottom: 20),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            "Grafik Perkembangan Skor",
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blue),
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            height: 180,
+            child: LineChart(
+              LineChartData(
+                gridData: const FlGridData(show: true, drawVerticalLine: false),
+                titlesData: FlTitlesData(
+                  show: true,
+                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      interval: 1,
+                      getTitlesWidget: (value, meta) => Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: Text('K${value.toInt()}', style: const TextStyle(fontSize: 10)),
+                      ),
+                    ),
+                  ),
+                  leftTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      interval: 2,
+                      getTitlesWidget: (value, meta) => Text(value.toInt().toString(), style: const TextStyle(fontSize: 10)),
+                    ),
+                  ),
+                ),
+                borderData: FlBorderData(show: false),
+                minX: 1,
+                maxX: _quizHistory.length.toDouble() > 5 ? _quizHistory.length.toDouble() : 5,
+                minY: 0,
+                maxY: 10,
+                lineBarsData: [
+                  LineChartBarData(
+                    spots: spots,
+                    isCurved: true,
+                    barWidth: 4,
+                    color: Colors.blue,
+                    belowBarData: BarAreaData(
+                      show: true,
+                      color: Colors.blue.withOpacity(0.1),
+                    ),
+                    dotData: const FlDotData(show: true),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   // ================= UI =================
@@ -120,14 +250,28 @@ class _QuizScreenState extends State<QuizScreen> {
                 ),
               ),
 
-            const SizedBox(height: 20),
+            const SizedBox(height: 12),
+
+            TextField(
+                controller: _pinController,
+                keyboardType: TextInputType.number, // Hanya memunculkan keyboard angka
+                maxLength: 4, // Membatasi PIN maksimal 4 digit
+                obscureText: true, // Menyembunyikan angka (menjadi titik-titik) demi privasi
+                decoration: InputDecoration(
+                  labelText: "PIN (4 Digit Angka)",
+                  prefixIcon: const Icon(Icons.lock),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+            ),
 
             // ================= STATUS =================
             if (playerName.isNotEmpty)
               Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  "Player: $playerName",
+                  "Player : $playerName",
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
@@ -233,8 +377,20 @@ class _QuizScreenState extends State<QuizScreen> {
                     return;
                   }
 
+                  if (_pinController.text.trim().length < 4) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text("PIN harus 4 digit angka")),
+                    );
+                    return;
+                  }
+
                   playerName = _nameController.text.trim();
+                  playerPin = _pinController.text.trim();
+                  
                   _startQuiz();
+
+                  _fetchQuizHistory();
+
                 } else if (_quizFinished) {
                   _reset();
                 } else {
@@ -242,6 +398,7 @@ class _QuizScreenState extends State<QuizScreen> {
                 }
               },
             ),
+            _buildProgressChart(),
           ],
         ),
       ),
